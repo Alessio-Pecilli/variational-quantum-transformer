@@ -1,31 +1,12 @@
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Se vuoi disattivare oneDNN
 from encoding import Encoding
 import random
 from hamiltonian import QuantumEvolver
-import gensim.downloader as api
-from qiskit.quantum_info import partial_trace
 from qiskit.visualization import circuit_drawer
-from qiskit.visualization import plot_histogram
-import time
-import math
-from qiskit.circuit.library import Initialize
-from qiskit.quantum_info import Operator
-from scipy.optimize import minimize
 import matplotlib.pyplot as plt
-from collections import defaultdict
-from qiskit import ClassicalRegister
-from collections import Counter
-from scipy.linalg import qr
-from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit
 from qiskit import QuantumCircuit
 from qiskit.circuit import ParameterVector
 from qiskit.quantum_info import Statevector
 from PIL import Image
-
-
-from collections import defaultdict
 import matplotlib.pyplot as plt
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector
@@ -33,67 +14,35 @@ from qiskit.circuit.library import UnitaryGate
 from layer import ansatzBuilder
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import Aer
-from qiskit.circuit.library import HGate
 from datasets import load_dataset
-from collections import Counter
 import numpy as np
-import os
-
-def showCircuitFromStateVector(statevector):
-    """
-    Visualizza il circuito che inizializza il dato statevector.
-    """
-    qubits = int(np.log2(len(statevector)))
-    qc = QuantumCircuit(qubits)
-    qc.initialize(statevector, qc.qubits)
-    img_path = "quantum_attention_circuit.png"
-    circuit_drawer(qc, output="mpl", filename=img_path)
-    Image.open(img_path).show()
 
 def getUnitaryFromTk(psi):
     import numpy as np
 
-    # Normalizza psi
     psi = psi / np.linalg.norm(psi)
-    dimensione = len(psi)
-    
-    # Inizializza la base con psi
+    dim = len(psi)
     base = [psi]
-    
+   
+    while len(base) < dim:
+        vec = np.random.rand(dim) + 1j * np.random.rand(dim)
 
-    # Costruisci le colonne ortogonali con Gram-Schmidt
-    while len(base) < dimensione:
-        
-
-        vec = np.random.rand(dimensione) + 1j * np.random.rand(dimensione)
-        
-
-        # Ortogonalizza rispetto ai vettori già nella base
         for i, b in enumerate(base):
-            coeff = np.vdot(b, vec)
-            
+            coeff = np.vdot(b, vec)       
             vec -= coeff * b
 
-        # Normalizza il nuovo vettore
         norm = np.linalg.norm(vec)
         
         if norm < 1e-12:
-            print("  Norma troppo piccola, scarto vettore e riprovo.")
             continue
-
         vec /= norm
         base.append(vec)
-        
 
-    # Colonne → matrice unitaria
     U = np.column_stack(base)
-    
-
-
     return U
 
 def get_params(_num_qubits, _num_layer):
-        # Per ora uso n_qubit e n_layer fissi
+        
         num_qubits = _num_qubits
         x = get_param_resolver(num_qubits, _num_layer)
         params = getParamsShape(x, num_qubits, _num_layer)
@@ -107,9 +56,8 @@ def get_param_resolver(num_qubits, num_layers):
     return param_dict
 
 def getParamsShape(param_list, num_qubits, num_layer):
-        # Verifica il numero totale di elementi
-        # assert len(param_list) % 6 == 0, "invalid number of parameters"
-    param_values = np.array(list(param_list.values()))  # ho tolto .values per una migliore visualizzazione
+        
+    param_values = np.array(list(param_list.values()))  
     x = param_values.reshape(num_layer, 2, num_qubits // 2, 12)
     x_reshaped = x.reshape(num_layer, 2, num_qubits // 2, 4, 3)
     return x_reshaped
@@ -121,16 +69,15 @@ def makeInitialCircuit(psi,paramsV,paramsK,numLayer):
     ansatz_v = ansatzBuilder(half ,paramsV,numLayer)
     ansatz_k = ansatzBuilder(half ,paramsK,numLayer)
     
-    #ansatz_q = ansatzBuilder(half ,paramsQ)
+    
     U = getUnitaryFromTk(psi.data)
     
 
-    gate_U = UnitaryGate(U, #label="Uψ1"
+    gate_U = UnitaryGate(U
                          )
     qc = QuantumCircuit(n_qubits, n_qubits)
     qc.append(gate_U, list(range(n_qubits)))
     
-    # Applica le matrici unitarie agli stessi gruppi
     qc.compose(ansatz_v.get_unitary("V"), list(range(half)), inplace=True)
     qc.compose(ansatz_k.get_unitary("W"), list(range(half, n_qubits)), inplace=True)
    
@@ -146,7 +93,7 @@ def getCircuitUXDaggerFromTk(t_k):
     U = getUnitaryFromTk(t_k)
     U_dagger = U.conj().T
     gate = UnitaryGate(U_dagger, 
-                       #label="U†_x"
+                       
                        )
     qc = QuantumCircuit(n, name="U†_x")
     qc.append(gate, range(n))
@@ -154,39 +101,36 @@ def getCircuitUXDaggerFromTk(t_k):
     return qc
 
 def getLossFromPsi(psi, V, K, numLayer):
-    #print("Psi:", psi)
+    
     n_qubits = int(np.log2(len(psi)))
     half = n_qubits // 2
-    lunghezza_tk = int(np.sqrt(len(psi.data)))  # perché t_k ⊗ t_k ha len² ampiezze
-    psi_matrix = psi.data.reshape((lunghezza_tk, lunghezza_tk))
+    len_tk = int(np.sqrt(len(psi.data))) 
+    psi_matrix = psi.data.reshape((len_tk, len_tk))
     n_token = psi_matrix.shape[1]
     nShots = 1024*5
     total_loss = 0.0
-    for i in range(n_token - 1):  # ATTENZIONE: fino a n_token - 1
+    for i in range(n_token - 1): 
         
         t_k = psi_matrix[:, i]
         norm = np.linalg.norm(t_k)
 
         if np.isnan(norm) or norm == 0:
-            #print(f"⚠️ Salto t_k[{i}] per norma nulla o NaN")
+            
             continue
           
         
         try:
             U_dagger = getCircuitUXDaggerFromTk(t_k)
         except Exception as e:
-            print(f"Errore nella costruzione di U† per t_k[{i}]: {e}")
             continue
         
         circuit = makeInitialCircuit(psi, V, K, numLayer)
         
-        circuit.append(U_dagger.to_instruction(#label=f"U†x_{i}_B"
+        circuit.append(U_dagger.to_instruction(
             ), list(range(half, n_qubits)))
-        circuit.append(U_dagger.to_instruction(#label=f"U†x_{i}_A"
+        circuit.append(U_dagger.to_instruction(
             ), list(range(half)))
-        circuit.measure(list(range(n_qubits)), list(range(n_qubits)))  # misura solo A
-
-        showCircuit(circuit)
+        circuit.measure(list(range(n_qubits)), list(range(n_qubits)))  
         
         sim = Aer.get_backend("aer_simulator")
         result = sim.run(transpile(circuit, sim), shots = nShots).result()
@@ -205,26 +149,23 @@ def getLossFromPsi(psi, V, K, numLayer):
 
 def getLossFromQuantumFrasi(V, K, numLayer, states):
     loss_totale = 0.0
-    num_validi = 0
     print("frasi:", states)
     for i in range(1, len(states)):  
-        psi = None  # inizializza come None
+        psi = None 
 
         for j in range(i):
             t = states[j]
-            #print(f"Stato t{j}:", np.round(t, 5))
-            t = t / np.linalg.norm(t)  # normalizza lo stato singolo
-            kron = np.kron(t, t)       # fai il prodotto tensoriale t ⊗ t
+            
+            t = t / np.linalg.norm(t)  
+            kron = np.kron(t, t)       
             psi = kron if psi is None else psi + kron
 
-        psi = psi / np.linalg.norm(psi)  # normalizza la somma finale
-        #print("ψ somma tensoriali:", np.round(psi, 5))
-        #print("Norma finale:", np.linalg.norm(psi))
+        psi = psi / np.linalg.norm(psi) 
+        
 
         loss = getLossFromPsi(Statevector(psi), V, K, numLayer)
         loss_totale += loss
         num_validi += 1
-    #print("FINISCO PERCHEè SONO A POSTO")
     return loss_totale / num_validi if num_validi > 0 else 0.0
 
 
@@ -232,31 +173,6 @@ def showCircuit(qc):
     img_path = "quantum_attention_circuit.png"
     circuit_drawer(qc, output="mpl", filename=img_path)
     Image.open(img_path).show()
-
- 
-def salva_parametri(parametri, nome_file="parametri_migliori.npz"):
-    np.savez(nome_file, **parametri)
-
-def carica_parametri(numLayer, n_qubit, nome_file = "parametri_migliori.npz"):
-    # Carica il dizionario dei parametri salvati
-    dati = np.load(nome_file)
-    
-    # Ricostruisce array piatto a partire dai parametri salvati come "parametro_i"
-    lista_parametri = [dati[f"parametro_{i}"] for i in range(len(dati))]
-    parametri_piatto = np.array(lista_parametri)
-
-    # Calcola la forma target
-    param_shape = get_params(n_qubit//2, numLayer).shape
-    n_params = np.prod(param_shape)
-
-    # Verifica di sicurezza
-    assert len(parametri_piatto) >= 2 * n_params, \
-        f"Parametri insufficienti: attesi almeno {2 * n_params}, trovati {len(parametri_piatto)}"
-
-    # Ricostruzione dei tensori V e K
-    V = parametri_piatto[:n_params].reshape(param_shape)
-    K = parametri_piatto[n_params:2*n_params].reshape(param_shape)
-    return {"V": V, "K": K}
 
 
 def plot_loss_all(losses, best_losses, worst_losses, times = 0, nqubit = 16,nome_base="loss_plot"):
@@ -273,32 +189,18 @@ def plot_loss_all(losses, best_losses, worst_losses, times = 0, nqubit = 16,nome
     plt.savefig(f"{nome_base}_qubit_e_iterazioni.png")
     plt.close()
 
-    # Secondo grafico: rispetto al tempo
-    """
-    plt.figure()
-    plt.plot(times, losses, marker="o", label="Loss")
-    plt.plot(times, best_losses, marker="s", linestyle="--", label="Best Loss")
-    plt.plot(times, worst_losses, marker="x", linestyle=":", label="Worst Loss")
-    plt.title("Loss rispetto al Tempo")
-    plt.xlabel("Tempo (s)")
-    plt.ylabel("Loss")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(f"{nome_base}_{nqubit}qubit_e_tempo.png")
-    plt.close()"""
-
-def getLossFromFrasi(numFrasi, V, K, numLayer, enc):
+def getLossFromPhrases(numFrasi, V, K, numLayer, enc):
     loss = 0.0
     
     
     for i in range(numFrasi):
         lossFrase = 0.0
         
-        lenFrase = len(enc.getFrasi()[i])
+        lenFrase = len(enc.getPhrases()[i])
         
         for e in range(1, lenFrase):
             
-            psi = Statevector(enc.psi_locale(i,e))
+            psi = Statevector(enc.localPsi(i,e))
             loss = getLossFromPsi(psi, V, K, numLayer)
             lossFrase += loss
         
@@ -308,142 +210,6 @@ def getLossFromFrasi(numFrasi, V, K, numLayer, enc):
     
     return loss
 
-"""
-def ottimizzazione(numFrasi, ore_max, numeroIterazioni, numLayer, enc):
-    import json
-    import time
-    import numpy as np
-    from datetime import datetime
-    from qiskit.quantum_info import Statevector
-    from scipy.optimize import minimize
-
-    metodi = ['COBYLA', 'Powell', 'SLSQP']
-    print("\nInizio ottimizzazione dei parametri ansatz...\n")
-    
-    best_loss = float("inf")
-    worst_loss = 0
-    n_qubit = int(np.log2(len(Statevector(enc.psi_locale(0)).data))) // 2
-    best_params = None
-    param_shape = get_params(n_qubit, numLayer).shape
-    n_params = np.prod(param_shape)
-    stop_early = [False]
-    losses = []
-    worst_losses = []
-    best_losses = []
-    times = []
-    inizio = time.time()
-    iterazione = [0]
-    timeout_secondi = ore_max * 3600
-    ultima_loss = [None]
-    ultimo_elapsed = [None]
-    ultimi_params = [None, None]  # V, K
-    for j in range(20):
-        best_params = None
-        lossesTemp = []
-        for i in range(numeroIterazioni):
-            if best_params is None:
-                params_init = np.concatenate([
-                    get_params(n_qubit, numLayer).flatten(),
-                    get_params(n_qubit, numLayer).flatten(),
-                ])
-            else:
-                params_init = np.concatenate([
-                    best_params["V"].flatten(),
-                    best_params["K"].flatten(),
-                ])
-
-            def salva_backup():
-                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                parametri = carica_parametri(numLayer, n_qubit)
-                backup = {
-                    "timestamp": timestamp,
-                    "best_loss": best_loss,
-                    "params": converti(parametri),
-                }
-                with open("quantum_backup.json", "w") as f:
-                    json.dump(backup, f, indent=2)
-
-            def loss_totale(params_tutti):
-                nonlocal lossesTemp
-                iterazione[0] += 1
-                elapsed = time.time() - inizio
-                ultimo_elapsed[0] = elapsed
-
-                if elapsed > timeout_secondi:
-                    salva_backup()
-                    raise TimeoutError("Tempo massimo di ottimizzazione raggiunto.")
-
-                if iterazione[0] % 100 == 0:
-                    print(f"Iterazione {iterazione[0]}" + " a ", datetime.now().strftime("%H:%M:%S"))
-                    salva_backup()
-
-                if int(elapsed) % 1800 < 2:
-                    mins = int(elapsed // 60)
-                    print(f" Tempo trascorso: {mins} minuti")
-                    salva_backup()
-
-                pV = params_tutti[:n_params].reshape(param_shape)
-                pK = params_tutti[n_params:2 * n_params].reshape(param_shape)
-                ultimi_params[0] = pV
-                ultimi_params[1] = pK
-
-                loss = getLossFromFrasi(numFrasi, pV, pK, numLayer, enc)
-                lossesTemp.append(loss)
-                ultima_loss[0] = loss
-                return loss
-
-            try:
-                if iterazione[0] < 100:
-                    metodo = metodi[0]
-                elif iterazione[0] < 1750:
-                    print("Metodo 1")
-                    metodo = metodi[1]
-                else:
-                    print("Metodo 2")
-                    metodo = metodi[2]
-
-                minimize(
-                    loss_totale,
-                    params_init,
-                    method=metodo,
-                    options={'maxiter': 250, 'disp': False}
-                )
-                lossTemp = sum(lossesTemp) 
-            lossTemp = lossTemp/numeroIterazioni
-            losses.append(lossTemp)
-            #Voglio    
-
-                if lossTemp > worst_loss:
-                    worst_loss = lossTemp
-                if lossTemp < best_loss:
-                    best_loss = lossTemp
-                    print(f" Nuova loss migliore trovata: {best_loss:.6f}" + " a ", datetime.now().strftime("%H:%M:%S"))
-                    best_params = {
-                        "V": ultimi_params[0].copy(),
-                        "K": ultimi_params[1].copy(),
-                    }
-
-                losses.append(lossTemp)
-                worst_losses.append(worst_loss)
-                best_losses.append(best_loss)
-                plot_loss_all(losses, best_losses, worst_losses)
-
-                if stop_early[0]:
-                    print("\n✅ Ottimizzazione interrotta manualmente per low loss.")
-                    break
-
-            except TimeoutError:
-                print("\n⏹️ Interrotto: tempo massimo raggiunto.")
-                break
-
-        print("\n Ottimizzazione terminata.")
-        print(" Loss migliore:", best_loss)
-
-        plot_loss_all(losses, best_losses, worst_losses, times)
-
-    # Salva i parametri finali
-
-    return """
 
 def ottimizzazioneQuantum(ore_max, numeroIterazioni, numLayer, quantumStates):
     import json
@@ -500,17 +266,6 @@ def ottimizzazioneQuantum(ore_max, numeroIterazioni, numLayer, quantumStates):
                     K.flatten(),
                 ])
 
-            def salva_backup():
-                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                parametri = carica_parametri(numLayer, n_qubit)
-                backup = {
-                    "timestamp": timestamp,
-                    "best_loss": best_loss,
-                    "params": converti(parametri),
-                }
-                with open("quantum_backup.json", "w") as f:
-                    json.dump(backup, f, indent=2)
-
             def loss_totale(params_tutti):
                 nonlocal lossesTemp
                 iterazione[0] += 1
@@ -557,14 +312,14 @@ def ottimizzazioneQuantum(ore_max, numeroIterazioni, numLayer, quantumStates):
 
 
             except TimeoutError:
-                print("\n⏹️ Interrotto: tempo massimo raggiunto.")
+                
                 break
         lossTotaliSalvate.append(lossesTemp)
     media_per_iterazione = [sum(x)/len(x) for x in zip(*lossTotaliSalvate)]
     lossBest = [min(x) for x in zip(*lossTotaliSalvate)]
     lossWorst = [max(x) for x in zip(*lossTotaliSalvate)]
     salva_grafico_loss(media_per_iterazione, lossBest, lossWorst, numLayer)
-    salva_valori_loss_su_file(media_per_iterazione, lossBest, lossWorst, "loss_risultati.txt")
+    salva_valori_loss_su_file(media_per_iterazione, lossBest, lossWorst, "results.txt")
 
 
     print(lossTotaliSalvate)
@@ -582,10 +337,10 @@ def ottimizzazioneClassic(ore_max, numeroIterazioni, numLayer, numFrasi, enc):
     metodi = ['COBYLA', 'Powell', 'SLSQP']
     print("\nInizio ottimizzazione dei parametri ansatz...\n")
 
-    best_loss = float("inf")
     
-    lenParola = len(enc.getFrasi()[0])
-    n_qubit = int(np.log2(len(Statevector(enc.psi_locale(0,lenParola-1)).data))) // 2
+    
+    lenParola = len(enc.getPhrases()[0])
+    n_qubit = int(np.log2(len(Statevector(enc.localPsi(0,lenParola-1)).data))) // 2
     print("N_qubit:", n_qubit)
     best_params = None
     param_shape = get_params(n_qubit, numLayer).shape
@@ -594,7 +349,6 @@ def ottimizzazioneClassic(ore_max, numeroIterazioni, numLayer, numFrasi, enc):
     numMaxiter = 250
     iterazione = [0]
     timeout_secondi = ore_max * 3600
-    ultima_loss = [None]
     ultimo_elapsed = [None]
     ultimi_params = [None, None]  # V, K
     lossTotaliSalvate = []
@@ -627,17 +381,6 @@ def ottimizzazioneClassic(ore_max, numeroIterazioni, numLayer, numFrasi, enc):
                     K.flatten(),
                 ])
 
-            def salva_backup():
-                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                parametri = carica_parametri(numLayer, n_qubit)
-                backup = {
-                    "timestamp": timestamp,
-                    "best_loss": best_loss,
-                    "params": converti(parametri),
-                }
-                with open("quantum_backup.json", "w") as f:
-                    json.dump(backup, f, indent=2)
-
             def loss_totale(params_tutti):
                 nonlocal lossesTemp
                 iterazione[0] += 1
@@ -662,7 +405,7 @@ def ottimizzazioneClassic(ore_max, numeroIterazioni, numLayer, numFrasi, enc):
                 ultimi_params[0] = pV
                 ultimi_params[1] = pK
 
-                loss = getLossFromFrasi(numFrasi, pV, pK, numLayer, enc)
+                loss = getLossFromPhrases(numFrasi, pV, pK, numLayer, enc)
                 
                 lossesTemp.append(loss)
                 
@@ -814,32 +557,36 @@ def clean_statevectors(states, soglia=1e-6):
     return cleaned_all
 
 if __name__ == "__main__":
-    numIterazioni = 2 #multiplo di 250
+    numIterations = 2  # multiple of 250
     numLayers = 3
-    ore_max = 100 
+    maxHours = 100
+
     
-    frasi = ["We love pizza",
-             "Timeflies fast",
-             "Robots need power",
-             "Birds can sing",
-             "Dogs are friendly",
-             "I trust you",
-             "Machines learn quickly"
-        
-        
+    choice = "1"
+
+    if choice == "1":
+        print("Starting classic optimization")
+        #Sentences for example
+        # You can replace these with your own sentences or load from a dataset
+        sentences = [
+        "We love",
     ]
-    
-    #train_frasi = get_frasi_dataset(split="train", max_frasi=numFrasi)
-    numFrasi = 3 #SANDRO QUI metti 6
-    #enc = Encoding(frasi, embedding_dim=16)
-    print("Inizio ottimizzazione")
-    
-    #ottimizzazioneClassic(ore_max, numIterazioni, numLayers,numFrasi, enc)
-    all_states = []
-    for _ in range(numFrasi):
-        seed = random.randint(0, 10000)
-        all_states.append(QuantumEvolver(n_qubit=4, max_time=6, seed = seed).get_states())
-    ottimizzazioneQuantum(ore_max, numIterazioni, numLayers,all_states)
-   
+
+        numSentences = len(sentences)
+        enc = Encoding(sentences, embeddingDim=16)
+
+        ottimizzazioneClassic(maxHours, numIterations, numLayers, numSentences, enc)
+    elif choice == "2":
+        print("Starting quantum optimization")
+        import random
+        numSentences = 1  # Number of sentences to generate states for
+        #numSentences for example, you can change it to any number you want
+        allStates = []
+        for _ in range(numSentences):
+            seed = random.randint(0, 10000)
+            allStates.append(QuantumEvolver(n_qubit=4, max_time=2, seed=seed).get_states())
+        ottimizzazioneQuantum(maxHours, numIterations, numLayers, allStates)
+    else:
+        print("Invalid choice. Exiting.")
     
     

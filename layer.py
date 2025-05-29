@@ -25,6 +25,9 @@ class ansatzBuilder:
         for l in range(num_layers):
             self.layer(params[l][0], params[l][1])
         
+        
+    
+
 
     def get_params(self, _num_qubits, _num_layer):
         
@@ -45,7 +48,8 @@ class ansatzBuilder:
         return 12 * (self._num_qubits)
 
     def min_to_vqsd(self, param_list, num_qubits, num_layer):
-        param_values = np.array(list(param_list.values()))
+       
+        param_values = np.array(list(param_list.values())) 
         x = param_values.reshape(num_layer, 2, num_qubits // 2, 12)
         x_reshaped = x.reshape(num_layer, 2, num_qubits // 2, 4, 3)
         return x_reshaped
@@ -55,13 +59,13 @@ class ansatzBuilder:
         if params.size != self.num_angles_required_for_layer() / 2:
             raise ValueError("Params.size: ", params.size, " angoli richiesti: ", self.num_angles_required_for_layer() / 2)
 
-        shift = 0 
+        shift = 0  # non ho copie, lavoro con un singolo stato
         for ii in range(0, n - 1, 2):
             qubits = [self.qubits[ii + shift], self.qubits[ii + 1 + shift]]
             gate_params = params[ii // 2]
             self._apply_gate(qubits, gate_params)
 
-        shift = self._num_qubits * 0 
+        shift = self._num_qubits * 0  # 0 = COPY
 
         if n >= 2:
             for ii in range(1, n, 2):
@@ -95,9 +99,3 @@ class ansatzBuilder:
         combined_circuit = QuantumCircuit(self._num_qubits, name=circuit_name)
         combined_circuit.compose(self.unitary_circ, inplace=True)
         return combined_circuit.to_instruction()
-
-    def show_circuit(self,qc):
-        
-        img_path = "quantum_attention_circuit.png"
-        circuit_drawer(qc, output="mpl", filename=img_path)
-        Image.open(img_path).show()
